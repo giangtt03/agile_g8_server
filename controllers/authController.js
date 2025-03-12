@@ -26,12 +26,7 @@ module.exports = {
 
   loginUser: async (req, res) => {
     try {
-      if (req.method === "GET") {
-        return res.render('login');
-      }
-
       const { email, password } = req.body;
-
       const user = await User.findOne({ email });
 
       if (!user) {
@@ -45,18 +40,57 @@ module.exports = {
         return res.status(401).json({ error: 'Invalid credentials' });
       }
 
-      const token = jwt.sign({ userId: user._id, role: user.role }, process.env.JWT_SEC, { expiresIn: '1h' });
+      const accessToken = jwt.sign(
+        { userId: user._id, role: user.role },
+        process.env.JWT_SEC,
+        { expiresIn: '1h' }
+      );
 
-      req.session.user = user;
-      req.session.token = token;
+      const refreshToken = jwt.sign(
+        { userId: user._id },
+        process.env.REFRESH_TOKEN_SEC,
+        { expiresIn: '7d' }
+      );
 
-      console.log("Data user: ", user)
+      user.refreshToken = refreshToken;
+      await user.save();
 
-      res.json({ user: user, token: token });
+      res.json({
+        user: { ...user._doc, password: undefined, refreshToken: undefined },
+        accessToken,
+        refreshToken,
+      });
 
     } catch (error) {
       console.error(error);
       res.status(500).json({ error: 'Internal Server Error' });
+    }
+  },
+
+  refreshToken: async (req, res) => {
+    try {
+      const { refreshToken } = req.body;
+      if (!refreshToken) {
+        return res.status(401).json({ error: 'No refresh token provided' });
+      }
+  
+      const decoded = jwt.verify(refreshToken, process.env.REFRESH_TOKEN_SEC);
+      const user = await User.findById(decoded.userId);
+  
+      if (!user || user.refreshToken !== refreshToken) {
+        return res.status(403).json({ error: 'Invalid refresh token' });
+      }
+  
+      const newAccessToken = jwt.sign(
+        { userId: user._id, role: user.role },
+        process.env.JWT_SEC,
+        { expiresIn: '1h' }
+      );
+  
+      res.json({ accessToken: newAccessToken });
+    } catch (error) {
+      console.error(error);
+      res.status(403).json({ error: 'Invalid refresh token' });
     }
   }
 
