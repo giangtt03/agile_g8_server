@@ -1,4 +1,4 @@
-const User = require('../models/administrator/auth');
+const User = require('../models/user');
 const CryptoJs = require('crypto-js');
 const jwt = require('jsonwebtoken');
 
@@ -7,6 +7,7 @@ module.exports = {
     try {
       const { username, email, password, avatar, role } = req.body;
 
+      // Mã hóa mật khẩu
       const encryptedPassword = CryptoJs.AES.encrypt(password, process.env.SECRET).toString();
 
       const newUser = new User({
@@ -26,72 +27,40 @@ module.exports = {
 
   loginUser: async (req, res) => {
     try {
-      const { email, password } = req.body;
-      const user = await User.findOne({ email });
+        if (req.method === "GET") {
+            return res.render('login');
+        }
 
-      if (!user) {
-        return res.status(401).json({ error: 'User not found' });
-      }
+        const { email, password } = req.body;
 
-      const bytes = CryptoJs.AES.decrypt(user.password, process.env.SECRET);
-      const originalPassword = bytes.toString(CryptoJs.enc.Utf8);
+        const user = await User.findOne({ email });
 
-      if (originalPassword !== password) {
-        return res.status(401).json({ error: 'Invalid credentials' });
-      }
+        if (!user) {
+            return res.status(401).json({ error: 'User not found' });
+        }
 
-      const accessToken = jwt.sign(
-        { userId: user._id, role: user.role },
-        process.env.JWT_SEC,
-        { expiresIn: '1h' }
-      );
+        // Kiểm tra mật khẩu
+        const bytes = CryptoJs.AES.decrypt(user.password, process.env.SECRET);
+        const originalPassword = bytes.toString(CryptoJs.enc.Utf8);
 
-      const refreshToken = jwt.sign(
-        { userId: user._id },
-        process.env.REFRESH_TOKEN_SEC,
-        { expiresIn: '7d' }
-      );
+        if (originalPassword !== password) {
+            return res.status(401).json({ error: 'Invalid credentials' });
+        }
 
-      user.refreshToken = refreshToken;
-      await user.save();
+        const token = jwt.sign({ userId: user._id, role: user.role }, process.env.JWT_SEC, { expiresIn: '1h' });
 
-      res.json({
-        user: { ...user._doc, password: undefined, refreshToken: undefined },
-        accessToken,
-        refreshToken,
-      });
+        // Lưu thông tin người dùng và token vào session
+        req.session.user = user;
+        req.session.token = token;
+
+        console.log("Data user: ", user)
+
+        res.render('menu', { user: user});
 
     } catch (error) {
-      console.error(error);
-      res.status(500).json({ error: 'Internal Server Error' });
+        console.error(error);
+        res.status(500).json({ error: 'Internal Server Error' });
     }
-  },
-
-  refreshToken: async (req, res) => {
-    try {
-      const { refreshToken } = req.body;
-      if (!refreshToken) {
-        return res.status(401).json({ error: 'No refresh token provided' });
-      }
-  
-      const decoded = jwt.verify(refreshToken, process.env.REFRESH_TOKEN_SEC);
-      const user = await User.findById(decoded.userId);
-  
-      if (!user || user.refreshToken !== refreshToken) {
-        return res.status(403).json({ error: 'Invalid refresh token' });
-      }
-  
-      const newAccessToken = jwt.sign(
-        { userId: user._id, role: user.role },
-        process.env.JWT_SEC,
-        { expiresIn: '1h' }
-      );
-  
-      res.json({ accessToken: newAccessToken });
-    } catch (error) {
-      console.error(error);
-      res.status(403).json({ error: 'Invalid refresh token' });
-    }
-  }
+}
 
 };

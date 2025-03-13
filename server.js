@@ -43,8 +43,10 @@ app.set('views', path.join(__dirname, 'views'));
 app.set('view engine', 'ejs');
 
 //routes adminstrator
-const authRouter = require('./routes/adminstrator/auth');
+const authRouter = require('./routes/auth');
+const categoryRouter = require('./routes/category');
 
 app.use('/', authRouter);
+app.use('/category', categoryRouter);
 
 app.listen(process.env.PORT || port, () => console.log(`Server listening on port ${process.env.PORT}!`));
